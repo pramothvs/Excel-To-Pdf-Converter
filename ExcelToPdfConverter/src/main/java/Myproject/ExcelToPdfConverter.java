@@ -3,6 +3,7 @@ import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import com.itextpdf.text.*;
+import com.itextpdf.text.Font;
 import com.itextpdf.text.pdf.*;
 
 import java.io.*;
@@ -74,6 +75,11 @@ public class ExcelToPdfConverter {
 	                int numCols = sheet.getRow(0).getLastCellNum();
 	                PdfPTable pdfTable = new PdfPTable(numCols);
 	                pdfTable.setWidthPercentage(100);
+	                
+	                // Set equal column widths
+	                float[] columnWidths = new float[numCols];
+	                for (int i = 0; i < numCols; i++) columnWidths[i] = 1f;
+	                pdfTable.setWidths(columnWidths);
 
 	                for (int r = 0; r <= sheet.getLastRowNum(); r++) {
 	                    Row row = sheet.getRow(r);
@@ -86,20 +92,52 @@ public class ExcelToPdfConverter {
 	                            continue; 
 	                        }
 
-	                        PdfPCell pdfCell = new PdfPCell(new Phrase(getCellValue(cell)));
+	                        if (cell != null) {
+	                            // Get Excel style + font
+	                            CellStyle style = cell.getCellStyle();
+	                            org.apache.poi.ss.usermodel.Font excelFont = workbook.getFontAt(style.getFontIndexAsInt());
 
-	                        // check merged region
-	                        CellRangeAddress mergedRegion = getMergedRegion(sheet, r, c);
-	                        if (mergedRegion != null) {
-	                            int colspan = mergedRegion.getLastColumn() - mergedRegion.getFirstColumn() + 1;
-	                            int rowspan = mergedRegion.getLastRow() - mergedRegion.getFirstRow() + 1;
-	                            pdfCell.setColspan(colspan);
-	                            pdfCell.setRowspan(rowspan);
-	                            pdfCell.setHorizontalAlignment(Element.ALIGN_CENTER);
+	                            int fontStyle = Font.NORMAL;
+	                            if (excelFont.getBold()) fontStyle |= Font.BOLD;
+	                            if (excelFont.getItalic()) fontStyle |= Font.ITALIC;
+
+	                            Font pdfFont = new Font(
+	                                    Font.FontFamily.HELVETICA,
+	                                    excelFont.getFontHeightInPoints() > 0 ? excelFont.getFontHeightInPoints() : 11,
+	                                    fontStyle,
+	                                    BaseColor.BLACK // temporarily keep text black
+	                            );
+
+	                            // Create phrase with text
+	                            String text = getCellValue(cell);
+	                            Phrase phrase = new Phrase(text, pdfFont);
+	                            PdfPCell pdfCell = new PdfPCell(phrase);
+
+	                            // Alignment
+	                            switch (style.getAlignment()) {
+	                                case CENTER: pdfCell.setHorizontalAlignment(Element.ALIGN_CENTER); break;
+	                                case RIGHT:  pdfCell.setHorizontalAlignment(Element.ALIGN_RIGHT); break;
+	                                default:     pdfCell.setHorizontalAlignment(Element.ALIGN_LEFT); break;
+	                            }
 	                            pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
-	                        }
+	                            
+	                         // Wrap text and padding
+	                            pdfCell.setNoWrap(false);
+	                            pdfCell.setPadding(5f);
+	                            pdfCell.setUseAscender(true);
+	                            pdfCell.setUseDescender(true);
 
-	                        pdfTable.addCell(pdfCell);
+	                            // Handle merged regions
+	                            CellRangeAddress mergedRegion = getMergedRegion(sheet, r, c);
+	                            if (mergedRegion != null) {
+	                                int colspan = mergedRegion.getLastColumn() - mergedRegion.getFirstColumn() + 1;
+	                                int rowspan = mergedRegion.getLastRow() - mergedRegion.getFirstRow() + 1;
+	                                pdfCell.setColspan(colspan);
+	                                pdfCell.setRowspan(rowspan);
+	                            }
+
+	                            pdfTable.addCell(pdfCell);
+	                        }
 	                    }
 	                }
 	                document.add(pdfTable);
